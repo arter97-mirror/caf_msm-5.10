@@ -12,6 +12,9 @@
 
 #define MAX_IB_OBJS 1000
 #define NUM_SET_DRAW_GROUPS 32
+#define IB_LEVEL_1 1
+#define IB_LEVEL_2 2
+#define IB_LEVEL_3 3
 
 struct set_draw_state {
 	uint64_t cmd_stream_addr;
@@ -57,7 +60,8 @@ static int ib_parse_set_draw_state(struct kgsl_device *device,
 static int ib_parse_type7_set_draw_state(struct kgsl_device *device,
 	unsigned int *ptr,
 	struct kgsl_process_private *process,
-	struct adreno_ib_object_list *ib_obj_list);
+	struct adreno_ib_object_list *ib_obj_list,
+	int ib_level);
 
 /*
  * adreno_ib_merge_range() - Increases the address range tracked by an ib
@@ -472,7 +476,7 @@ static int ib_parse_draw_indx(struct kgsl_device *device, unsigned int *pkt,
 			ib_parse_vars->set_draw_groups[i].cmd_stream_addr,
 			ib_parse_vars->set_draw_groups[i].cmd_stream_dwords,
 			0, SNAPSHOT_GPU_OBJECT_DRAW,
-			ib_obj_list, 2);
+			ib_obj_list, IB_LEVEL_2);
 		if (ret)
 			break;
 	}
@@ -487,14 +491,15 @@ static int ib_parse_draw_indx(struct kgsl_device *device, unsigned int *pkt,
 static int ib_parse_type7(struct kgsl_device *device, unsigned int *ptr,
 	struct kgsl_process_private *process,
 	struct adreno_ib_object_list *ib_obj_list,
-	struct ib_parser_variables *ib_parse_vars)
+	struct ib_parser_variables *ib_parse_vars,
+	int ib_level)
 {
 	int opcode = cp_type7_opcode(*ptr);
 
 	switch (opcode) {
 	case CP_SET_DRAW_STATE:
 		return ib_parse_type7_set_draw_state(device, ptr, process,
-					ib_obj_list);
+					ib_obj_list, ib_level);
 	}
 
 	return 0;
@@ -640,7 +645,8 @@ static int ib_parse_type0(struct kgsl_device *device, unsigned int *ptr,
 static int ib_parse_type7_set_draw_state(struct kgsl_device *device,
 	unsigned int *ptr,
 	struct kgsl_process_private *process,
-	struct adreno_ib_object_list *ib_obj_list)
+	struct adreno_ib_object_list *ib_obj_list,
+	int ib_level)
 {
 	int size = type7_pkt_size(*ptr);
 	int i;
@@ -677,7 +683,7 @@ static int ib_parse_type7_set_draw_state(struct kgsl_device *device,
 				ret = adreno_ib_find_objs(device, process,
 					cmd_stream_addr, cmd_stream_dwords,
 					0, SNAPSHOT_GPU_OBJECT_DRAW,
-					ib_obj_list, 2);
+					ib_obj_list, ib_level + 1);
 			if (ret)
 				break;
 			continue;
@@ -690,7 +696,7 @@ static int ib_parse_type7_set_draw_state(struct kgsl_device *device,
 			ret = adreno_ib_find_objs(device, process,
 				gpuaddr, (ptr[i] & 0x0000FFFF),
 				0, SNAPSHOT_GPU_OBJECT_IB,
-				ib_obj_list, 2);
+				ib_obj_list, ib_level + 1);
 			if (ret)
 				break;
 		}
@@ -754,7 +760,7 @@ static int ib_parse_set_draw_state(struct kgsl_device *device,
 			ret = adreno_ib_find_objs(device, process,
 				ptr[i + 1], (ptr[i] & 0x0000FFFF),
 				0, SNAPSHOT_GPU_OBJECT_IB,
-				ib_obj_list, 2);
+				ib_obj_list, IB_LEVEL_2);
 			if (ret)
 				break;
 		}
@@ -808,7 +814,7 @@ static int adreno_cp_parse_ib2(struct kgsl_device *device,
 	}
 
 	return adreno_ib_find_objs(device, process, gpuaddr, dwords, ib2base,
-		SNAPSHOT_GPU_OBJECT_IB, ib_obj_list, 2);
+		SNAPSHOT_GPU_OBJECT_IB, ib_obj_list, IB_LEVEL_2);
 }
 
 /*
@@ -841,6 +847,9 @@ static int adreno_ib_find_objs(struct kgsl_device *device,
 	struct adreno_ib_object *ib_obj;
 	struct kgsl_mem_entry *entry;
 	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
+
+	if (ib_level > IB_LEVEL_3)
+		return 0;
 
 	/* check that this IB is not already on list */
 	for (i = 0; i < ib_obj_list->num_objs; i++) {
@@ -939,7 +948,7 @@ static int adreno_ib_find_objs(struct kgsl_device *device,
 			} else {
 				ret = ib_parse_type7(device, &src[i], process,
 						ib_obj_list,
-						&ib_parse_vars);
+						&ib_parse_vars, ib_level);
 				/*
 				 * If the parse function failed (probably
 				 * because of a bad decode) then bail out and
@@ -1020,7 +1029,7 @@ int adreno_ib_create_object_list(struct kgsl_device *device,
 	}
 
 	ret = adreno_ib_find_objs(device, process, gpuaddr, dwords, ib2base,
-		SNAPSHOT_GPU_OBJECT_IB, ib_obj_list, 1);
+		SNAPSHOT_GPU_OBJECT_IB, ib_obj_list, IB_LEVEL_1);
 
 	/* Even if there was an error return the remaining objects found */
 	if (ib_obj_list->num_objs)

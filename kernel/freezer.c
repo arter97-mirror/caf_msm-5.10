@@ -24,7 +24,6 @@ EXPORT_SYMBOL(system_freezing_cnt);
  * system_transition_mutex
  */
 bool pm_freezing;
-EXPORT_SYMBOL_GPL(pm_freezing);
 bool pm_nosig_freezing;
 
 /* protects freezing and frozen transitions */

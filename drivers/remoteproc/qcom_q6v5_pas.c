@@ -1473,51 +1473,12 @@ static const struct of_device_id adsp_of_match[] = {
 };
 MODULE_DEVICE_TABLE(of, adsp_of_match);
 
-/*
- * adsp_freeze - prepare remoteproc for hibernation image creation.
- *
- * If the subsystem crashed before hibernate (e.g. due to a PDR event), its
- * rproc state is RPROC_CRASHED and rproc_crash_handler_work is queued on
- * rproc_recovery_wq (WQ_FREEZABLE).  The workqueue freezer defers that work
- * until after the hibernate image is written, so the CRASHED state is
- * captured in the image.  On restore, rproc_crash_handler_work thaws and
- * calls rproc_trigger_recovery() -> request_firmware(), but /vendor/firmware_mnt
- * is not yet mounted at that point in the restore sequence, causing -ENOENT
- * and leaving the subsystem permanently offline.
- *
- * Fix: before the image is frozen, move any CRASHED rproc to OFFLINE under
- * its lock.  rproc_crash_handler_work then sees OFFLINE on restore and takes
- * the "Don't recover if the remote processor was stopped" early-exit path,
- * skipping the firmware load entirely.  Userspace will restart the subsystem
- * normally once firmware_mnt is available.
- */
-static int adsp_freeze(struct device *dev)
-{
-	struct qcom_adsp *adsp = dev_get_drvdata(dev);
-
-	if (!adsp || !adsp->rproc)
-		return 0;
-
-	mutex_lock(&adsp->rproc->lock);
-	if (adsp->rproc->state == RPROC_CRASHED)
-		adsp->rproc->state = RPROC_OFFLINE;
-	mutex_unlock(&adsp->rproc->lock);
-
-	return 0;
-}
-
-static const struct dev_pm_ops adsp_pm_ops = {
-	.freeze   = adsp_freeze,
-	.poweroff = adsp_freeze,
-};
-
 static struct platform_driver adsp_driver = {
 	.probe = adsp_probe,
 	.remove = adsp_remove,
 	.driver = {
 		.name = "qcom_q6v5_pas",
 		.of_match_table = adsp_of_match,
-		.pm = &adsp_pm_ops,
 	},
 };
 

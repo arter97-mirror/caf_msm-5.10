@@ -67,7 +67,7 @@ static char *read_symbol_file(struct device *dev, const char *path, size_t *size
 	int ret;
 	const struct firmware *symtab = NULL;
 
-	ret = request_firmware_direct(&symtab, path, dev);
+	ret = request_firmware(&symtab, path, dev);
 	if (ret < 0) {
 		dev_err(dev, "request_firmware failed: %s (%d)\n", path, ret);
 		return ERR_PTR(ret);

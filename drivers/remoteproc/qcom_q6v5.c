@@ -15,7 +15,6 @@
 #include <linux/soc/qcom/smem_state.h>
 #include <linux/remoteproc.h>
 #include <linux/delay.h>
-#include <linux/freezer.h>
 #include <linux/rbtree.h>
 #include <linux/kthread.h>
 #include <linux/fs.h>
@@ -113,14 +112,7 @@ static void qcom_q6v5_crash_handler_work(struct work_struct *work)
 	 * sync() and fclose() on attempting the dump.
 	 */
 	msleep(100);
-	/*
-	 * During hibernation the ADSP is shut down intentionally; do not
-	 * panic the system in that case.  The adsp_freeze() callback in
-	 * qcom_q6v5_pas already moves the rproc state to OFFLINE so that
-	 * recovery is skipped on restore.
-	 */
-	if (!READ_ONCE(pm_freezing))
-		panic("Panicking, remoteproc %s crashed\n", q6v5->rproc->name);
+	panic("Panicking, remoteproc %s crashed\n", q6v5->rproc->name);
 }
 
 #ifdef CONFIG_QCOM_CRASH_SYMBOL_MATCH

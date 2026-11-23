@@ -78,6 +78,32 @@ struct pdr_list_node {
 static const char * const ind_notif_timeout_msg =
 	"PDR: Indication notifier %s, state: 0x%x, trans-id: %d\n taking too long";
 
+static bool pdr_pm_freezing;
+
+static int pdr_pm_notifier(struct notifier_block *nb,
+				   unsigned long event, void *data)
+{
+	switch (event) {
+	case PM_SUSPEND_PREPARE:
+	case PM_HIBERNATION_PREPARE:
+	case PM_RESTORE_PREPARE:
+		WRITE_ONCE(pdr_pm_freezing, true);
+		break;
+
+	case PM_POST_SUSPEND:
+	case PM_POST_HIBERNATION:
+	case PM_POST_RESTORE:
+		WRITE_ONCE(pdr_pm_freezing, false);
+		break;
+	}
+
+	return NOTIFY_OK;
+}
+
+static struct notifier_block pdr_pm_nb = {
+	.notifier_call = pdr_pm_notifier,
+};
+
 static int pdr_locator_new_server(struct qmi_handle *qmi,
 				  struct qmi_service *svc)
 {
@@ -282,7 +308,7 @@ static void ind_notif_timeout_handler(struct timer_list *t)
 	    system_state != SYSTEM_RESTART &&
 	    system_state != SYSTEM_POWER_OFF &&
 	    system_state != SYSTEM_SUSPEND &&
-	    !READ_ONCE(pm_freezing) &&
+	    !READ_ONCE(pdr_pm_freezing) &&
 	    system_state != SYSTEM_HALT &&
 	    !qcom_device_shutdown_in_progress)
 		panic(ind_notif_timeout_msg, pds->service_path, pds->state, ind->transaction_id);
@@ -781,6 +807,19 @@ void pdr_handle_release(struct pdr_handle *pdr)
 	kfree(pdr);
 }
 EXPORT_SYMBOL(pdr_handle_release);
+
+static int __init pdr_interface_init(void)
+{
+	return register_pm_notifier(&pdr_pm_nb);
+}
+
+static void __exit pdr_interface_exit(void)
+{
+	unregister_pm_notifier(&pdr_pm_nb);
+}
+
+module_init(pdr_interface_init);
+module_exit(pdr_interface_exit);
 
 MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("Qualcomm Protection Domain Restart helpers");
